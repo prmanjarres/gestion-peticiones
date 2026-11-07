@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Peticiones y Solicitudes - Alcaldía de Manizales</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #1a5276;
+            --primary-dark: #0e3a57;
+        }
+        body { background-color: #f4f6f9; font-family: 'Segoe UI', system-ui, sans-serif; }
+        .navbar-brand img { height: 48px; margin-right: 12px; }
+        .navbar {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+        }
+        .nav-tabs .nav-link { color: #555; font-weight: 500; }
+        .nav-tabs .nav-link.active {
+            color: var(--primary);
+            border-bottom: 3px solid var(--primary);
+            background: transparent;
+        }
+        .card { border: none; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+        .table th {
+            background-color: #eef2f7; color: #333; font-weight: 600;
+            font-size: 0.85rem; white-space: nowrap;
+        }
+        .table td { vertical-align: middle; font-size: 0.9rem; }
+        .btn-primary { background-color: var(--primary); border-color: var(--primary); }
+        .btn-primary:hover { background-color: var(--primary-dark); border-color: var(--primary-dark); }
+        .btn-outline-primary { color: var(--primary); border-color: var(--primary); }
+        .btn-outline-primary:hover { background-color: var(--primary); border-color: var(--primary); }
+        .modal-header {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+        }
+        .modal-header .btn-close { filter: invert(1); }
+        .search-box { max-width: 320px; }
+        .action-btns .btn { padding: 0.25rem 0.5rem; font-size: 0.8rem; }
+        #pdfViewer { width: 100%; height: 75vh; border: none; }
+        .empty-state { padding: 3rem 1rem; text-align: center; color: #888; }
+        .empty-state i { font-size: 3rem; margin-bottom: 1rem; opacity: 0.4; }
+        .form-label { font-weight: 500; font-size: 0.9rem; color: #444; }
+        .required::after { content: " *"; color: #c0392b; }
+        footer { background: #1a252f; color: #aaa; font-size: 0.85rem; }
+        .toast-container { z-index: 1100; }
+        .status-dot {
+            width: 10px; height: 10px; border-radius: 50%; display: inline-block;
+        }
+        .status-ok { background: #28a745; }
+        .status-err { background: #dc3545; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark sticky-top">
+        <div class="container-fluid px-4">
+            <a class="navbar-brand d-flex align-items-center" href="/">
+                <img src="https://ventanilla.manizales.gov.co/entidad_1/logos/logo-dark.png?v=2c29a63bec43a45b"
+                     alt="Logo Alcaldía de Manizales" onerror="this.style.display='none'">
+                <div>
+                    <div class="fw-bold fs-5">Gestión de Peticiones y Solicitudes</div>
+                    <small class="opacity-75" style="font-size:0.75rem;">Alcaldía de Manizales · MongoDB</small>
+                </div>
+            </a>
+            <div class="d-flex align-items-center gap-3 text-white-50">
+                <span class="d-none d-md-inline">
+                    <span class="status-dot" id="mongoStatus"></span>
+                    <small id="mongoLabel">Conectando...</small>
+                </span>
+                <span class="d-none d-md-inline">
+                    <i class="bi bi-calendar3"></i> <span id="fechaActual"></span>
+                </span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid px-4 py-4">
+        <ul class="nav nav-tabs mb-4" id="mainTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="peticiones-tab" data-bs-toggle="tab" data-bs-target="#peticiones" type="button">
+                    <i class="bi bi-envelope-paper me-1"></i> Peticiones
+                    <span class="badge bg-primary ms-1" id="countPeticiones">0</span>
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="solicitudes-tab" data-bs-toggle="tab" data-bs-target="#solicitudes" type="button">
+                    <i class="bi bi-file-earmark-text me-1"></i> Solicitudes
+                    <span class="badge bg-primary ms-1" id="countSolicitudes">0</span>
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content">
+            <!-- PETICIONES -->
+            <div class="tab-pane fade show active" id="peticiones">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+                            <div class="input-group search-box">
+                                <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                                <input type="text" class="form-control" id="searchPeticiones" placeholder="Buscar por radicado, peticionario...">
+                            </div>
+                            <button class="btn btn-primary" onclick="abrirModalPeticion()">
+                                <i class="bi bi-plus-lg me-1"></i> Nueva Petición
+                            </button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Radicado</th>
+                                        <th>Fecha Rad.</th>
+                                        <th>Tipo</th>
+                                        <th>Peticionario</th>
+                                        <th>Correo</th>
+                                        <th>Oficio Resp.</th>
+                                        <th>Fecha Resp.</th>
+                                        <th>PDF</th>
+                                        <th class="text-center">Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tablaPeticiones"></tbody>
+                            </table>
+                        </div>
+                        <div id="emptyPeticiones" class="empty-state d-none">
+                            <i class="bi bi-inbox"></i>
+                            <p class="mb-0">No hay peticiones registradas</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SOLICITUDES -->
+            <div class="tab-pane fade" id="solicitudes">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+                            <div class="input-group search-box">
+                                <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                                <input type="text" class="form-control" id="searchSolicitudes" placeholder="Buscar por radicado, solicitante...">
+                            </div>
+                            <button class="btn btn-primary" onclick="abrirModalSolicitud()">
+                                <i class="bi bi-plus-lg me-1"></i> Nueva Solicitud
+                            </button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Radicado</th>
+                                        <th>Fecha Rad.</th>
+                                        <th>Tipo</th>
+                                        <th>Detalle</th>
+                                        <th>Solicitante</th>
+                                        <th>Tipo Res.</th>
+                                        <th>N° Resolución</th>
+                                        <th>Fecha Res.</th>
+                                        <th>Fecha Notif.</th>
+                                        <th>PDF</th>
+                                        <th class="text-center">Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tablaSolicitudes"></tbody>
+                            </table>
+                        </div>
+                        <div id="emptySolicitudes" class="empty-state d-none">
+                            <i class="bi bi-inbox"></i>
+                            <p class="mb-0">No hay solicitudes registradas</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL PETICIÓN -->
+    <div class="modal fade" id="modalPeticion" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="tituloModalPeticion"><i class="bi bi-envelope-paper me-2"></i>Nueva Petición</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="formPeticion">
+                        <input type="hidden" id="peticionId">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label required">Radicado</label>
+                                <input type="text" class="form-control" id="petRadicado" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label required">Fecha de Radicado</label>
+                                <input type="date" class="form-control" id="petFechaRadicado" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label required">Tipo de Petición</label>
+                                <select class="form-select" id="petTipo" required>
+                                    <option value="">Seleccione...</option>
+                                    <option value="Petición de información">Petición de información</option>
+                                    <option value="Queja">Queja</option>
+                                    <option value="Reclamo">Reclamo</option>
+                                    <option value="Sugerencia">Sugerencia</option>
+                                    <option value="Felicitación">Felicitación</option>
+                                    <option value="Derecho de petición">Derecho de petición</option>
+                                    <option value="Otro">Otro</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label required">Peticionario</label>
+                                <input type="text" class="form-control" id="petPeticionario" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label required">Correo del Peticionario</label>
+                                <input type="email" class="form-control" id="petCorreo" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Oficio de Respuesta</label>
+                                <input type="text" class="form-control" id="petOficio" placeholder="Ej: OF-2026-00123">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Fecha de Respuesta</label>
+                                <input type="date" class="form-control" id="petFechaRespuesta">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Documento PDF</label>
+                                <input type="file" class="form-control" id="petPdf" accept=".pdf,application/pdf">
+                                <div id="petPdfActual" class="form-text text-success d-none">
+                                    <i class="bi bi-file-earmark-pdf"></i> <span></span>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" id="btnGuardarPeticion" onclick="guardarPeticion()">
+                        <i class="bi bi-check-lg me-1"></i> Guardar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL SOLICITUD -->
+    <div class="modal fade" id="modalSolicitud" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="tituloModalSolicitud"><i class="bi bi-file-earmark-text me-2"></i>Nueva Solicitud</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="formSolicitud">
+                        <input type="hidden" id="solicitudId">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label required">Radicado</label>
+                                <input type="text" class="form-control" id="solRadicado" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label required">Fecha de Radicado</label>
+                                <input type="date" class="form-control" id="solFechaRadicado" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label required">Tipo de Solicitud</label>
+                                <select class="form-select" id="solTipo" required>
+                                    <option value="">Seleccione...</option>
+                                    <option value="Licencia">Licencia</option>
+                                    <option value="Permiso">Permiso</option>
+                                    <option value="Autorización">Autorización</option>
+                                    <option value="Certificación">Certificación</option>
+                                    <option value="Registro">Registro</option>
+                                    <option value="Otro">Otro</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label required">Solicitante</label>
+                                <input type="text" class="form-control" id="solSolicitante" required>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label required">Detalle de la Solicitud</label>
+                                <textarea class="form-control" id="solDetalle" rows="2" required></textarea>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label required">Correo del Solicitante</label>
+                                <input type="email" class="form-control" id="solCorreo" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Tipo de Resolución</label>
+                                <select class="form-select" id="solTipoResolucion">
+                                    <option value="">Seleccione...</option>
+                                    <option value="Resolución administrativa">Resolución administrativa</option>
+                                    <option value="Resolución de concesión">Resolución de concesión</option>
+                                    <option value="Resolución de negación">Resolución de negación</option>
+                                    <option value="Resolución de archivo">Resolución de archivo</option>
+                                    <option value="Otro">Otro</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Número de Resolución</label>
+                                <input type="text" class="form-control" id="solNumeroResolucion" placeholder="Ej: RES-2026-0456">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Fecha de Resolución</label>
+                                <input type="date" class="form-control" id="solFechaResolucion">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Fecha de Notificación</label>
+                                <input type="date" class="form-control" id="solFechaNotificacion">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Documento PDF</label>
+                                <input type="file" class="form-control" id="solPdf" accept=".pdf,application/pdf">
+                                <div id="solPdfActual" class="form-text text-success d-none">
+                                    <i class="bi bi-file-earmark-pdf"></i> <span></span>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-primary" id="btnGuardarSolicitud" onclick="guardarSolicitud()">
+                        <i class="bi bi-check-lg me-1"></i> Guardar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL PDF -->
+    <div class="modal fade" id="modalPdf" tabindex="-1">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-file-earmark-pdf me-2"></i>Documento PDF</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-0">
+                    <iframe id="pdfViewer"></iframe>
+                </div>
+                <div class="modal-footer">
+                    <a id="btnDescargarPdf" class="btn btn-outline-primary" target="_blank" download>
+                        <i class="bi bi-download me-1"></i> Descargar
+                    </a>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+        <div id="toastNotif" class="toast align-items-center text-white border-0" role="alert">
+            <div class="d-flex">
+                <div class="toast-body" id="toastMensaje"></div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+            </div>
+        </div>
+    </div>
+
+    <footer class="text-center py-3 mt-4">
+        <div class="container">
+            Alcaldía de Manizales &copy; <span id="anioActual"></span> — Sistema de Gestión de Peticiones y Solicitudes (MongoDB)
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const API = {
+            peticiones: '/api/peticiones',
+            solicitudes: '/api/solicitudes'
+        };
+
+        function mostrarToast(mensaje, tipo = 'success') {
+            const el = document.getElementById('toastNotif');
+            document.getElementById('toastMensaje').textContent = mensaje;
+            el.className = `toast align-items-center text-white border-0 bg-${tipo}`;
+            new bootstrap.Toast(el, { delay: 3200 }).show();
+        }
+
+        function formatearFecha(f) {
+            if (!f) return '—';
+            const [y, m, d] = f.split('-');
+            return `${d}/${m}/${y}`;
+        }
+
+        function truncar(t, max = 40) {
+            if (!t) return '—';
+            return t.length > max ? t.substring(0, max) + '…' : t;
+        }
+
+        // ========== HEALTH ==========
+        async function checkHealth() {
+            try {
+                const res = await fetch('/api/health');
+                const data = await res.json();
+                const dot = document.getElementById('mongoStatus');
+                const label = document.getElementById('mongoLabel');
+                if (data.mongo === 'connected') {
+                    dot.className = 'status-dot status-ok';
+                    label.textContent = 'MongoDB conectado';
+                } else {
+                    dot.className = 'status-dot status-err';
+                    label.textContent = 'MongoDB desconectado';
+                }
+            } catch {
+                document.getElementById('mongoStatus').className = 'status-dot status-err';
+                document.getElementById('mongoLabel').textContent = 'Servidor no disponible';
+            }
+        }
+
+        // ========== PETICIONES ==========
+        async function cargarPeticiones(q = '') {
+            const tbody = document.getElementById('tablaPeticiones');
+            const empty = document.getElementById('emptyPeticiones');
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4">Cargando...</td></tr>';
+
+            try {
+                const url = q ? `${API.peticiones}?q=${encodeURIComponent(q)}` : API.peticiones;
+                const res = await fetch(url);
+                const items = await res.json();
+
+                document.getElementById('countPeticiones').textContent = items.length;
+                tbody.innerHTML = '';
+
+                if (!items.length) {
+                    empty.classList.remove('d-none');
+                    return;
+                }
+                empty.classList.add('d-none');
+
+                items.forEach(item => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td><strong>${item.radicado || '—'}</strong></td>
+                        <td>${formatearFecha(item.fechaRadicado)}</td>
+                        <td><span class="badge bg-light text-dark border">${item.tipo || '—'}</span></td>
+                        <td>${truncar(item.peticionario)}</td>
+                        <td><small>${item.correo || '—'}</small></td>
+                        <td>${item.oficio || '—'}</td>
+                        <td>${formatearFecha(item.fechaRespuesta)}</td>
+                        <td>
+                            ${item.pdfName
+                                ? `<button class="btn btn-sm btn-outline-danger" onclick="verPdf('peticiones', '${item._id}')"><i class="bi bi-file-earmark-pdf"></i></button>`
+                                : '<span class="text-muted">—</span>'}
+                        </td>
+                        <td class="text-center action-btns">
+                            <button class="btn btn-sm btn-outline-primary me-1" onclick="abrirModalPeticion('${item._id}')"><i class="bi bi-pencil"></i></button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="eliminarRegistro('peticiones', '${item._id}')"><i class="bi bi-trash"></i></button>
+                        </td>`;
+                    tbody.appendChild(tr);
+                });
+            } catch (err) {
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center text-danger">Error al cargar datos</td></tr>';
+                console.error(err);
+            }
+        }
+
+        function abrirModalPeticion(id = null) {
+            document.getElementById('formPeticion').reset();
+            document.getElementById('peticionId').value = '';
+            document.getElementById('petPdfActual').classList.add('d-none');
+            document.getElementById('tituloModalPeticion').innerHTML = '<i class="bi bi-envelope-paper me-2"></i>Nueva Petición';
+
+            if (id) {
+                fetch(`${API.peticiones}/${id}`)
+                    .then(r => r.json())
+                    .then(data => {
+                        document.getElementById('peticionId').value = data._id;
+                        document.getElementById('petRadicado').value = data.radicado || '';
+                        document.getElementById('petFechaRadicado').value = data.fechaRadicado || '';
+                        document.getElementById('petTipo').value = data.tipo || '';
+                        document.getElementById('petPeticionario').value = data.peticionario || '';
+                        document.getElementById('petCorreo').value = data.correo || '';
+                        document.getElementById('petOficio').value = data.oficio || '';
+                        document.getElementById('petFechaRespuesta').value = data.fechaRespuesta || '';
+                        if (data.pdfName) {
+                            const el = document.getElementById('petPdfActual');
+                            el.classList.remove('d-none');
+                            el.querySelector('span').textContent = data.pdfName;
+                        }
+                        document.getElementById('tituloModalPeticion').innerHTML = '<i class="bi bi-pencil me-2"></i>Editar Petición';
+                    });
+            }
+            new bootstrap.Modal(document.getElementById('modalPeticion')).show();
+        }
+
+        async function guardarPeticion() {
+            const form = document.getElementById('formPeticion');
+            if (!form.checkValidity()) { form.reportValidity(); return; }
+
+            const id = document.getElementById('peticionId').value;
+            const fd = new FormData();
+            fd.append('radicado', document.getElementById('petRadicado').value.trim());
+            fd.append('fechaRadicado', document.getElementById('petFechaRadicado').value);
+            fd.append('tipo', document.getElementById('petTipo').value);
+            fd.append('peticionario', document.getElementById('petPeticionario').value.trim());
+            fd.append('correo', document.getElementById('petCorreo').value.trim());
+            fd.append('oficio', document.getElementById('petOficio').value.trim());
+            fd.append('fechaRespuesta', document.getElementById('petFechaRespuesta').value);
+
+            const file = document.getElementById('petPdf').files[0];
+            if (file) fd.append('pdf', file);
+
+            const btn = document.getElementById('btnGuardarPeticion');
+            btn.disabled = true;
+
+            try {
+                const url = id ? `${API.peticiones}/${id}` : API.peticiones;
+                const method = id ? 'PUT' : 'POST';
+                const res = await fetch(url, { method, body: fd });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || 'Error al guardar');
+                }
+                bootstrap.Modal.getInstance(document.getElementById('modalPeticion')).hide();
+                cargarPeticiones();
+                mostrarToast(id ? 'Petición actualizada' : 'Petición registrada');
+            } catch (err) {
+                mostrarToast(err.message, 'danger');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // ========== SOLICITUDES ==========
+        async function cargarSolicitudes(q = '') {
+            const tbody = document.getElementById('tablaSolicitudes');
+            const empty = document.getElementById('emptySolicitudes');
+            tbody.innerHTML = '<tr><td colspan="11" class="text-center py-4">Cargando...</td></tr>';
+
+            try {
+                const url = q ? `${API.solicitudes}?q=${encodeURIComponent(q)}` : API.solicitudes;
+                const res = await fetch(url);
+                const items = await res.json();
+
+                document.getElementById('countSolicitudes').textContent = items.length;
+                tbody.innerHTML = '';
+
+                if (!items.length) {
+                    empty.classList.remove('d-none');
+                    return;
+                }
+                empty.classList.add('d-none');
+
+                items.forEach(item => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td><strong>${item.radicado || '—'}</strong></td>
+                        <td>${formatearFecha(item.fechaRadicado)}</td>
+                        <td><span class="badge bg-light text-dark border">${item.tipo || '—'}</span></td>
+                        <td title="${(item.detalle || '').replace(/"/g, '&quot;')}">${truncar(item.detalle, 35)}</td>
+                        <td>${truncar(item.solicitante)}</td>
+                        <td><small>${item.tipoResolucion || '—'}</small></td>
+                        <td>${item.numeroResolucion || '—'}</td>
+                        <td>${formatearFecha(item.fechaResolucion)}</td>
+                        <td>${formatearFecha(item.fechaNotificacion)}</td>
+                        <td>
+                            ${item.pdfName
+                                ? `<button class="btn btn-sm btn-outline-danger" onclick="verPdf('solicitudes', '${item._id}')"><i class="bi bi-file-earmark-pdf"></i></button>`
+                                : '<span class="text-muted">—</span>'}
+                        </td>
+                        <td class="text-center action-btns">
+                            <button class="btn btn-sm btn-outline-primary me-1" onclick="abrirModalSolicitud('${item._id}')"><i class="bi bi-pencil"></i></button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="eliminarRegistro('solicitudes', '${item._id}')"><i class="bi bi-trash"></i></button>
+                        </td>`;
+                    tbody.appendChild(tr);
+                });
+            } catch (err) {
+                tbody.innerHTML = '<tr><td colspan="11" class="text-center text-danger">Error al cargar datos</td></tr>';
+            }
+        }
+
+        function abrirModalSolicitud(id = null) {
+            document.getElementById('formSolicitud').reset();
+            document.getElementById('solicitudId').value = '';
+            document.getElementById('solPdfActual').classList.add('d-none');
+            document.getElementById('tituloModalSolicitud').innerHTML = '<i class="bi bi-file-earmark-text me-2"></i>Nueva Solicitud';
+
+            if (id) {
+                fetch(`${API.solicitudes}/${id}`)
+                    .then(r => r.json())
+                    .then(data => {
+                        document.getElementById('solicitudId').value = data._id;
+                        document.getElementById('solRadicado').value = data.radicado || '';
+                        document.getElementById('solFechaRadicado').value = data.fechaRadicado || '';
+                        document.getElementById('solTipo').value = data.tipo || '';
+                        document.getElementById('solDetalle').value = data.detalle || '';
+                        document.getElementById('solSolicitante').value = data.solicitante || '';
+                        document.getElementById('solCorreo').value = data.correo || '';
+                        document.getElementById('solTipoResolucion').value = data.tipoResolucion || '';
+                        document.getElementById('solNumeroResolucion').value = data.numeroResolucion || '';
+                        document.getElementById('solFechaResolucion').value = data.fechaResolucion || '';
+                        document.getElementById('solFechaNotificacion').value = data.fechaNotificacion || '';
+                        if (data.pdfName) {
+                            const el = document.getElementById('solPdfActual');
+                            el.classList.remove('d-none');
+                            el.querySelector('span').textContent = data.pdfName;
+                        }
+                        document.getElementById('tituloModalSolicitud').innerHTML = '<i class="bi bi-pencil me-2"></i>Editar Solicitud';
+                    });
+            }
+            new bootstrap.Modal(document.getElementById('modalSolicitud')).show();
+        }
+
+        async function guardarSolicitud() {
+            const form = document.getElementById('formSolicitud');
+            if (!form.checkValidity()) { form.reportValidity(); return; }
+
+            const id = document.getElementById('solicitudId').value;
+            const fd = new FormData();
+            fd.append('radicado', document.getElementById('solRadicado').value.trim());
+            fd.append('fechaRadicado', document.getElementById('solFechaRadicado').value);
+            fd.append('tipo', document.getElementById('solTipo').value);
+            fd.append('detalle', document.getElementById('solDetalle').value.trim());
+            fd.append('solicitante', document.getElementById('solSolicitante').value.trim());
+            fd.append('correo', document.getElementById('solCorreo').value.trim());
+            fd.append('tipoResolucion', document.getElementById('solTipoResolucion').value);
+            fd.append('numeroResolucion', document.getElementById('solNumeroResolucion').value.trim());
+            fd.append('fechaResolucion', document.getElementById('solFechaResolucion').value);
+            fd.append('fechaNotificacion', document.getElementById('solFechaNotificacion').value);
+
+            const file = document.getElementById('solPdf').files[0];
+            if (file) fd.append('pdf', file);
+
+            const btn = document.getElementById('btnGuardarSolicitud');
+            btn.disabled = true;
+
+            try {
+                const url = id ? `${API.solicitudes}/${id}` : API.solicitudes;
+                const method = id ? 'PUT' : 'POST';
+                const res = await fetch(url, { method, body: fd });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || 'Error al guardar');
+                }
+                bootstrap.Modal.getInstance(document.getElementById('modalSolicitud')).hide();
+                cargarSolicitudes();
+                mostrarToast(id ? 'Solicitud actualizada' : 'Solicitud registrada');
+            } catch (err) {
+                mostrarToast(err.message, 'danger');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // ========== COMÚN ==========
+        async function verPdf(tipo, id) {
+            try {
+                const url = tipo === 'peticiones' ? `${API.peticiones}/${id}` : `${API.solicitudes}/${id}`;
+                const res = await fetch(url);
+                const data = await res.json();
+                if (!data.pdfData) {
+                    mostrarToast('No hay documento PDF asociado', 'warning');
+                    return;
+                }
+                document.getElementById('pdfViewer').src = data.pdfData;
+                const btn = document.getElementById('btnDescargarPdf');
+                btn.href = data.pdfData;
+                btn.download = data.pdfName || 'documento.pdf';
+                new bootstrap.Modal(document.getElementById('modalPdf')).show();
+            } catch (err) {
+                mostrarToast('Error al cargar el PDF', 'danger');
+            }
+        }
+
+        async function eliminarRegistro(tipo, id) {
+            if (!confirm('¿Está seguro de eliminar este registro?')) return;
+            try {
+                const url = tipo === 'peticiones' ? `${API.peticiones}/${id}` : `${API.solicitudes}/${id}`;
+                const res = await fetch(url, { method: 'DELETE' });
+                if (!res.ok) throw new Error('Error al eliminar');
+                if (tipo === 'peticiones') cargarPeticiones();
+                else cargarSolicitudes();
+                mostrarToast('Registro eliminado');
+            } catch (err) {
+                mostrarToast(err.message, 'danger');
+            }
+        }
+
+        // Búsqueda con debounce
+        let t1, t2;
+        document.getElementById('searchPeticiones').addEventListener('input', e => {
+            clearTimeout(t1);
+            t1 = setTimeout(() => cargarPeticiones(e.target.value), 300);
+        });
+        document.getElementById('searchSolicitudes').addEventListener('input', e => {
+            clearTimeout(t2);
+            t2 = setTimeout(() => cargarSolicitudes(e.target.value), 300);
+        });
+
+        // Init
+        document.addEventListener('DOMContentLoaded', () => {
+            const hoy = new Date();
+            document.getElementById('fechaActual').textContent = hoy.toLocaleDateString('es-CO', {
+                weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+            });
+            document.getElementById('anioActual').textContent = hoy.getFullYear();
+            checkHealth();
+            cargarPeticiones();
+            cargarSolicitudes();
+            setInterval(checkHealth, 30000);
+        });
+    </script>
+</body>
+</html>

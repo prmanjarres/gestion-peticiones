@@ -1,0 +1,22 @@
+{
+  "name": "gestion-peticiones-solicitudes",
+  "version": "1.0.0",
+  "description": "Sistema de Gestión de Peticiones y Solicitudes - Alcaldía de Manizales",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "mongoose": "^8.7.0",
+    "multer": "^1.4.5-lts.1"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "author": "Alcaldía de Manizales",
+  "license": "MIT"
+}
